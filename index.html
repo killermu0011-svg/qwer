@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>픽셀 hex 변환기</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=JetBrains+Mono:wght@400;600&family=Noto+Sans+KR:wght@400;500;700&display=swap">
+<style>
+/* Layout: 상단 제목 + 탭 3개. 탭마다 왼쪽(입력/미리보기) · 오른쪽(결과) 2단, 좁으면 1단. */
+:root {
+  --bg: #eef1f5;
+  --surface: #ffffff;
+  --ink: #131c28;
+  --ink-soft: #566274;
+  --line: #d3dae4;
+  --accent: #0b7a64;
+  --accent-ink: #ffffff;
+  --code-bg: #f6f8fb;
+  --warn: #a8480f;
+  --font-display: "Black Han Sans", "Noto Sans KR", sans-serif;
+  --font-body: "Noto Sans KR", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f151d; --surface: #172029; --ink: #e8edf3; --ink-soft: #9aa7b8;
+    --line: #2a3644; --accent: #3fcfaa; --accent-ink: #07211a; --code-bg: #0f171f; --warn: #f0a068;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f151d; --surface: #172029; --ink: #e8edf3; --ink-soft: #9aa7b8;
+  --line: #2a3644; --accent: #3fcfaa; --accent-ink: #07211a; --code-bg: #0f171f; --warn: #f0a068;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.6;
+  padding-block: 28px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 1060px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+header { display: flex; flex-direction: column; gap: 6px; }
+.eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: .12em; color: var(--ink-soft); }
+h1 { font-family: var(--font-display); font-weight: 400; font-size: clamp(30px, 6vw, 46px); line-height: 1.15; margin: 0; text-wrap: balance; }
+h1 .hex { color: var(--accent); font-family: var(--font-mono); font-weight: 600; letter-spacing: -.02em; }
+.lede { margin: 0; color: var(--ink-soft); max-width: 62ch; }
+[role="tablist"] { display: flex; gap: 4px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+[role="tab"] {
+  font: inherit; font-weight: 500; color: var(--ink-soft); background: none; border: 0; cursor: pointer;
+  padding: 10px 16px; border-bottom: 3px solid transparent; margin-bottom: -1px; white-space: nowrap;
+}
+[role="tab"][aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+[role="tab"]:hover { color: var(--ink); }
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, label.file:focus-within {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+.cols { display: grid; grid-template-columns: minmax(0, 420px) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 760px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 18px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+h2 { font-size: 15px; margin: 0; font-weight: 700; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field label, .label { font-size: 13px; color: var(--ink-soft); }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+input[type="range"] { flex: 1; min-width: 120px; accent-color: var(--accent); }
+.num { font-family: var(--font-mono); font-weight: 600; min-width: 5.5ch; text-align: right; font-variant-numeric: tabular-nums; }
+select, input[type="number"] {
+  font: inherit; color: var(--ink); background: var(--code-bg); border: 1px solid var(--line); border-radius: 4px; padding: 6px 8px;
+}
+label.file {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-align: center;
+  border: 2px dashed var(--line); border-radius: 6px; padding: 18px 12px; cursor: pointer; color: var(--ink-soft);
+}
+label.file.drag, label.file:hover { border-color: var(--accent); color: var(--ink); }
+label.file strong { color: var(--ink); }
+label.file input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.stage {
+  background-image: linear-gradient(45deg, var(--line) 25%, transparent 25%, transparent 75%, var(--line) 75%),
+                    linear-gradient(45deg, var(--line) 25%, transparent 25%, transparent 75%, var(--line) 75%);
+  background-size: 16px 16px; background-position: 0 0, 8px 8px; background-color: var(--surface);
+  border: 1px solid var(--line); border-radius: 4px; padding: 8px; display: flex; justify-content: center;
+}
+.stage canvas, .stage img { max-width: 100%; height: auto; image-rendering: pixelated; display: block; border: 1px solid var(--line); }
+.stage canvas { width: 100%; max-width: 380px; }
+.meta { font-family: var(--font-mono); font-size: 12px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+textarea {
+  width: 100%; min-height: 260px; resize: vertical; font-family: var(--font-mono); font-size: 13px; line-height: 1.5;
+  color: var(--ink); background: var(--code-bg); border: 1px solid var(--line); border-radius: 4px; padding: 10px;
+}
+.btn {
+  font: inherit; font-weight: 700; cursor: pointer; border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink);
+  border-radius: 4px; padding: 8px 16px;
+}
+.btn.ghost { background: transparent; color: var(--accent); }
+.btn:hover { filter: brightness(1.08); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 11px; padding: 3px 8px 3px 4px; border: 1px solid var(--line); border-radius: 99px; background: var(--code-bg); }
+.chip i { width: 14px; height: 14px; border-radius: 50%; border: 1px solid var(--line); display: block; }
+.note { font-size: 13px; color: var(--ink-soft); margin: 0; }
+.note.warn { color: var(--warn); }
+.toast { font-size: 13px; color: var(--accent); min-height: 1.4em; }
+ol.steps { margin: 0; padding-left: 1.3em; display: flex; flex-direction: column; gap: 10px; }
+ol.steps li::marker { font-family: var(--font-mono); color: var(--accent); font-weight: 600; }
+pre.blocks {
+  margin: 0; overflow-x: auto; background: var(--code-bg); border: 1px solid var(--line); border-radius: 4px; padding: 14px;
+  font-family: var(--font-mono); font-size: 12.5px; line-height: 1.7; tab-size: 2;
+}
+code { font-family: var(--font-mono); font-size: .92em; background: var(--code-bg); padding: 1px 5px; border-radius: 3px; border: 1px solid var(--line); }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--ink-soft); font-weight: 500; }
+.scroll-x { overflow-x: auto; }
+[hidden] { display: none !important; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">PHOTO → #RRGGBB</div>
+    <h1>사진을 <span class="hex">#RRGGBB</span> 코드로</h1>
+    <p class="lede">사진을 작은 픽셀 그림으로 줄여 칸마다 색 코드를 뽑습니다. 모든 변환은 이 브라우저 안에서만 이루어지고 사진은 어디에도 올라가지 않습니다.</p>
+  </header>
+
+
+  <section id="p1">
+    <div class="cols">
+      <div class="panel">
+        <h2>사진 고르기</h2>
+        <label class="file" id="drop">
+          <input type="file" id="file" accept="image/*">
+          <strong>사진을 끌어놓거나 눌러서 고르세요</strong>
+          <span>jpg · png · gif · webp</span>
+        </label>
+        <div class="field">
+          <label for="width">가로 칸 수 (엔트리가 그릴 픽셀 수)</label>
+          <div class="row"><input type="range" id="width" min="8" max="64" value="32"><span class="num" id="wval">32</span></div>
+        </div>
+        <div class="field">
+          <label for="sep">출력 모양</label>
+          <select id="sep">
+            <option value="paste" selected>엔트리 붙여넣기용 (R G B 숫자, 한 줄)</option>
+            <option value="line">한 줄에 하나 (리스트 파일용)</option>
+            <option value="comma">쉼표로 이어 한 줄</option>
+          </select>
+        </div>
+        <div class="row"><input type="checkbox" id="header" checked><label for="header" class="label">맨 앞에 가로·세로 칸 수 넣기 (붙여넣기용은 항상 들어갑니다)</label></div>
+        <div class="label" id="srcLabel">미리보기 (예시 그림)</div>
+        <div class="stage"><canvas id="prev" aria-label="변환된 픽셀 미리보기"></canvas></div>
+        <div class="meta" id="info"></div>
+      </div>
+      <div class="panel">
+        <h2>hex 코드</h2>
+        <textarea id="out" readonly spellcheck="false" aria-label="변환된 hex 코드"></textarea>
+        <div class="row">
+          <button class="btn" id="copy">전체 복사</button>
+          
+          <span class="toast" id="toast1" role="status"></span>
+        </div>
+        <div class="label">많이 쓰인 색</div>
+        <div class="chips" id="chips"></div>
+        <p class="note">칸 수가 많을수록 선명하지만 엔트리가 그리는 시간이 길어집니다. 처음에는 32칸을 권합니다.</p>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+// CORE-START
+function toHex(r, g, b) {
+  return '#' + [r, g, b].map(function (v) { return v.toString(16).padStart(2, '0'); }).join('').toUpperCase();
+}
+function pixelsToCodes(data, w, h) {
+  var out = [];
+  for (var i = 0; i < w * h; i++) {
+    var a = data[i * 4 + 3] / 255;
+    var f = function (c) { return Math.round(c * a + 255 * (1 - a)); };
+    out.push(toHex(f(data[i * 4]), f(data[i * 4 + 1]), f(data[i * 4 + 2])));
+  }
+  return out;
+}
+function formatCodes(codes, w, h, header, sep) {
+  if (sep === 'paste') {
+    var p3 = function (n) { return String(n).padStart(3, '0'); };
+    return 'X' + p3(w) + p3(h) + codes.map(function (c) {
+      return p3(parseInt(c.slice(1, 3), 16)) + p3(parseInt(c.slice(3, 5), 16)) + p3(parseInt(c.slice(5, 7), 16));
+    }).join('');
+  }
+  var items = header ? [String(w), String(h)].concat(codes) : codes;
+  return items.join(sep === 'comma' ? ',' : '\n');
+}
+function parseCodes(text, fallbackW) {
+  var toks = text.split(/[\s,;]+/).filter(Boolean);
+  if (toks.length === 1 && /^[xX]\d{15,}$/.test(toks[0])) toks[0] = toks[0].slice(1);
+  var w = null, h = null, i = 0;
+  if (toks.length === 1 && /^\d{15,}$/.test(toks[0]) && (toks[0].length - 6) % 9 === 0) {
+    var dw = +toks[0].slice(0, 3), dh = +toks[0].slice(3, 6);
+    if (dw > 0 && dh > 0 && (toks[0].length - 6) / 9 === dw * dh) {
+      var dc = [], hx = function (n) { return Math.min(255, n).toString(16).padStart(2, '0'); };
+      for (var q = 6; q < toks[0].length; q += 9) {
+        dc.push((hx(+toks[0].slice(q, q + 3)) + hx(+toks[0].slice(q + 3, q + 6)) + hx(+toks[0].slice(q + 6, q + 9))).toUpperCase());
+      }
+      return { w: dw, h: dh, colors: dc, bad: 0, hadHeader: true };
+    }
+  }
+  if (toks.length === 1 && toks[0].length >= 12 && toks[0].length % 6 === 0 &&
+      /^\d{6}[0-9a-fA-F]+$/.test(toks[0])) {
+    var cw = +toks[0].slice(0, 3), ch = +toks[0].slice(3, 6);
+    if (cw > 0 && ch > 0 && (toks[0].length - 6) / 6 === cw * ch) {
+      var cc = [];
+      for (var k = 6; k < toks[0].length; k += 6) cc.push(toks[0].slice(k, k + 6).toUpperCase());
+      return { w: cw, h: ch, colors: cc, bad: 0, hadHeader: true };
+    }
+  }
+  if (toks.length >= 2 && /^\d{1,3}$/.test(toks[0]) && /^\d{1,3}$/.test(toks[1])) {
+    w = +toks[0]; h = +toks[1]; i = 2;
+  }
+  var colors = [], bad = 0;
+  for (; i < toks.length; i++) {
+    var m = /^#?([0-9a-fA-F]{6})$/.exec(toks[i]);
+    if (m) colors.push(m[1].toUpperCase()); else bad++;
+  }
+  var hadHeader = w !== null;
+  if (!hadHeader) { w = Math.max(1, fallbackW | 0); h = Math.max(1, Math.ceil(colors.length / w)); }
+  return { w: w, h: h, colors: colors, bad: bad, hadHeader: hadHeader };
+}
+function topColors(codes, n) {
+  var m = {};
+  codes.forEach(function (c) { m[c] = (m[c] || 0) + 1; });
+  return Object.keys(m).map(function (k) { return [k, m[k]]; }).sort(function (a, b) { return b[1] - a[1]; }).slice(0, n);
+}
+// CORE-END
+
+var $ = function (id) { return document.getElementById(id); };
+var source = null;      // {el, w, h}
+var lastText = '';
+
+function makeSample() {
+  var c = document.createElement('canvas'); c.width = 64; c.height = 64;
+  var x = c.getContext('2d');
+  var g = x.createLinearGradient(0, 0, 0, 64); g.addColorStop(0, '#3a7bd5'); g.addColorStop(1, '#a8e6cf');
+  x.fillStyle = g; x.fillRect(0, 0, 64, 64);
+  x.fillStyle = '#ffd23f'; x.beginPath(); x.arc(32, 34, 22, 0, 7); x.fill();
+  x.fillStyle = '#2b2b2b';
+  x.beginPath(); x.arc(24, 28, 3.2, 0, 7); x.fill();
+  x.beginPath(); x.arc(40, 28, 3.2, 0, 7); x.fill();
+  x.lineWidth = 3; x.strokeStyle = '#2b2b2b'; x.beginPath(); x.arc(32, 36, 11, 0.15 * Math.PI, 0.85 * Math.PI); x.stroke();
+  x.fillStyle = '#e8452c'; x.fillRect(0, 56, 64, 8);
+  return { el: c, w: 64, h: 64 };
+}
+
+function process() {
+  var w = +$('width').value; $('wval').textContent = w;
+  var h = Math.max(1, Math.round(w * source.h / source.w));
+  var c = document.createElement('canvas'); c.width = w; c.height = h;
+  var x = c.getContext('2d', { willReadFrequently: true });
+  x.fillStyle = '#ffffff'; x.fillRect(0, 0, w, h);
+  x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high';
+  x.drawImage(source.el, 0, 0, w, h);
+  var img = x.getImageData(0, 0, w, h);
+  var codes = pixelsToCodes(img.data, w, h);
+  $('header').disabled = $('sep').value === 'paste';
+  lastText = formatCodes(codes, w, h, $('header').checked, $('sep').value);
+  $('out').value = lastText;
+  var p = $('prev'); p.width = w; p.height = h;
+  p.getContext('2d').putImageData(img, 0, 0);
+  $('info').textContent = w + ' × ' + h + ' = ' + (w * h) + '칸 · 글자 ' + lastText.length.toLocaleString('ko-KR') + '자';
+  var chips = $('chips'); chips.textContent = '';
+  topColors(codes, 10).forEach(function (t) {
+    var s = document.createElement('span'); s.className = 'chip';
+    var i = document.createElement('i'); i.style.background = t[0];
+    s.appendChild(i); s.appendChild(document.createTextNode(t[0]));
+    s.title = t[1] + '칸'; chips.appendChild(s);
+  });
+}
+
+function flash(msg) { var t = $('toast1'); t.textContent = msg; setTimeout(function () { t.textContent = ''; }, 2200); }
+
+function loadFile(f) {
+  if (!f || !/^image\//.test(f.type)) { flash('이미지 파일을 골라 주세요.'); return; }
+  var url = URL.createObjectURL(f), im = new Image();
+  im.onload = function () {
+    source = { el: im, w: im.naturalWidth, h: im.naturalHeight };
+    $('srcLabel').textContent = '미리보기 (' + (f.name || '사진') + ')';
+    process(); URL.revokeObjectURL(url);
+  };
+  im.onerror = function () { flash('이 파일은 열 수 없습니다.'); };
+  im.src = url;
+}
+
+$('file').addEventListener('change', function (e) { loadFile(e.target.files[0]); });
+var drop = $('drop');
+['dragenter', 'dragover'].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add('drag'); }); });
+['dragleave', 'drop'].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.remove('drag'); }); });
+drop.addEventListener('drop', function (e) { loadFile(e.dataTransfer.files[0]); });
+['width', 'header', 'sep'].forEach(function (id) { $(id).addEventListener('input', process); });
+
+$('copy').addEventListener('click', function () {
+  var done = function () { flash('복사했습니다.'); };
+  var fallback = function () { $('out').select(); flash('선택했습니다. Ctrl+C 로 복사하세요.'); };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(lastText).then(done, fallback); else fallback();
+});
+source = makeSample();
+process();
+</script>
+</body>
+</html>
